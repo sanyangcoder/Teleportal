@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no" />
-    <title>Teleportal – GLB Edition</title>
+    <title>Teleportal – GLB Auto‑Scale</title>
     <style>
         body { margin: 0; overflow: hidden; background-color: #050510; font-family: 'Segoe UI', Arial, sans-serif; }
         #crosshair {
@@ -28,7 +28,6 @@
             z-index: 1000;
             transition: background-color 0.1s;
         }
-        /* redesigned menu screen (smaller text + English) */
         #menuScreen {
             position: fixed;
             inset: 0;
@@ -142,7 +141,6 @@
     </style>
 </head>
 <body>
-    <!-- redesigned menu structure -->
     <div id="menuScreen">
         <div class="menu-container">
             <div class="menu-logo">
@@ -199,9 +197,33 @@
         import * as CANNON from 'cannon-es';
 
         // ============================================================
-        // ASSET LOADER with fallback
+        // AUTO-SCALING HELPERS
         // ============================================================
-        const ASSET_PATH = './assets/';  // change to your path
+        function scaleModelToTarget(model, targetSize) {
+            // Uniformly scale the model so its longest axis equals targetSize
+            const box = new THREE.Box3().setFromObject(model);
+            const size = box.getSize(new THREE.Vector3());
+            const maxDim = Math.max(size.x, size.y, size.z);
+            if (maxDim > 0.001) {
+                const scaleFactor = targetSize / maxDim;
+                model.scale.set(scaleFactor, scaleFactor, scaleFactor);
+                console.log(`Auto-scaled model from ${maxDim.toFixed(2)} to ${targetSize} (factor ${scaleFactor.toFixed(3)})`);
+            } else {
+                console.warn('Model has zero size, cannot auto-scale.');
+            }
+        }
+
+        function getModelHalfExtents(model) {
+            // Returns the half-extents of the model's bounding box (after scaling)
+            const box = new THREE.Box3().setFromObject(model);
+            const size = box.getSize(new THREE.Vector3());
+            return size.clone().multiplyScalar(0.5);
+        }
+
+        // ============================================================
+        // ASSET LOADER with fallback + auto-scale
+        // ============================================================
+        const ASSET_PATH = './assets/';
         const loader = new GLTFLoader();
         let assets = {
             environment: null,
@@ -218,21 +240,20 @@
             if (assetsLoaded >= totalAssets) {
                 allAssetsAttempted = true;
                 loadingIndicator.style.display = 'none';
-                // All assets processed (loaded or failed)
-                console.log('All assets processed. Starting game ready.');
-                // The game will use whatever is available; fallbacks are built-in.
+                console.log('All assets processed.');
             }
         }
 
-        // Show loading indicator
         loadingIndicator.style.display = 'block';
 
-        // ---- Environment ----
+        // ---- Environment (target size: 20 units to match chamber) ----
         loader.load(
             `${ASSET_PATH}environment.glb`,
             (gltf) => {
                 assets.environment = gltf.scene;
-                console.log('Environment loaded');
+                // Auto-scale to 20 units on longest axis
+                scaleModelToTarget(assets.environment, 20);
+                console.log('Environment loaded and auto-scaled.');
                 assetLoaded();
             },
             undefined,
@@ -243,12 +264,13 @@
             }
         );
 
-        // ---- Cube ----
+        // ---- Cube (target size: 1.1 units to match game's cube size) ----
         loader.load(
             `${ASSET_PATH}cube.glb`,
             (gltf) => {
                 assets.cube = gltf.scene;
-                console.log('Cube loaded');
+                scaleModelToTarget(assets.cube, 1.1);
+                console.log('Cube loaded and auto-scaled.');
                 assetLoaded();
             },
             undefined,
@@ -259,12 +281,13 @@
             }
         );
 
-        // ---- Gun ----
+        // ---- Gun (target size: 0.8 units to match procedural gun length) ----
         loader.load(
             `${ASSET_PATH}gun.glb`,
             (gltf) => {
                 assets.gun = gltf.scene;
-                console.log('Gun loaded');
+                scaleModelToTarget(assets.gun, 0.8);
+                console.log('Gun loaded and auto-scaled.');
                 assetLoaded();
             },
             undefined,
@@ -276,7 +299,7 @@
         );
 
         // ============================================================
-        // SCENE SETUP (same as original)
+        // SCENE SETUP
         // ============================================================
         const scene = new THREE.Scene();
         scene.background = new THREE.Color(0x0a0a14);
@@ -481,7 +504,7 @@
         const previewCamera = new THREE.PerspectiveCamera(50, 260 / 150, 0.01, 500);
 
         // ============================================================
-        // LIGHTING (unchanged)
+        // LIGHTING
         // ============================================================
         const ambient = new THREE.AmbientLight(0x222244, 0.4);
         scene.add(ambient);
@@ -518,7 +541,7 @@
         });
 
         // ============================================================
-        // PHYSICS (unchanged)
+        // PHYSICS
         // ============================================================
         const physicsWorld = new CANNON.World();
         physicsWorld.gravity.set(0, -20, 0);
@@ -557,11 +580,10 @@
         addWallBody(-7, 1.5, 6, 3, 3, 3);
         addWallBody(8, 1, -6, 2, 2, 2);
 
-        const cubeSize = 1.1;
         const cubeBody = new CANNON.Body({
             mass: 1,
             type: CANNON.Body.DYNAMIC,
-            shape: new CANNON.Box(new CANNON.Vec3(cubeSize / 2, cubeSize / 2, cubeSize / 2)),
+            shape: new CANNON.Box(new CANNON.Vec3(0.55, 0.55, 0.55)), // will be updated when GLB loads
             material: cubeMat,
             position: new CANNON.Vec3(2, 1.0, 2),
             linearDamping: 0.1,
@@ -577,7 +599,6 @@
         const wallColor = 0x1a2233, trimColor = 0x333344;
         const stripeOrange = 0xff6600, stripeBlue = 0x3399ff;
 
-        // We'll store procedural meshes in a group so we can hide them if GLB loads
         const proceduralEnvGroup = new THREE.Group();
         scene.add(proceduralEnvGroup);
         proceduralEnvGroup.name = 'proceduralEnv';
@@ -655,12 +676,12 @@
         const blackMatC = new THREE.MeshStandardMaterial({ color: 0x1a1a1a, roughness: 1.0, metalness: 0.0 });
         const frameMatC = new THREE.MeshStandardMaterial({ color: 0xcccccc, roughness: 0.3, metalness: 0.2 });
 
-        const mainBody = new THREE.Mesh(new THREE.BoxGeometry(cubeSize, cubeSize, cubeSize), whiteMatC);
+        const mainBody = new THREE.Mesh(new THREE.BoxGeometry(1.1, 1.1, 1.1), whiteMatC);
         mainBody.castShadow = true;
         mainBody.receiveShadow = true;
         grabbableCube.add(mainBody);
 
-        const dSize = (cubeSize / 2) * 0.6;
+        const dSize = (1.1 / 2) * 0.6;
         const diamondShape = new THREE.Shape();
         diamondShape.moveTo(0, dSize);
         diamondShape.lineTo(dSize, 0);
@@ -669,12 +690,12 @@
         diamondShape.closePath();
         const diamondGeom = new THREE.ShapeGeometry(diamondShape);
         const faces = [
-            { pos: [0, 0, cubeSize / 2 + 0.005], rot: [0, 0, 0] },
-            { pos: [0, 0, -cubeSize / 2 - 0.005], rot: [0, Math.PI, 0] },
-            { pos: [cubeSize / 2 + 0.005, 0, 0], rot: [0, Math.PI / 2, 0] },
-            { pos: [-cubeSize / 2 - 0.005, 0, 0], rot: [0, -Math.PI / 2, 0] },
-            { pos: [0, cubeSize / 2 + 0.005, 0], rot: [-Math.PI / 2, 0, 0] },
-            { pos: [0, -cubeSize / 2 - 0.005, 0], rot: [Math.PI / 2, 0, 0] }
+            { pos: [0, 0, 1.1 / 2 + 0.005], rot: [0, 0, 0] },
+            { pos: [0, 0, -1.1 / 2 - 0.005], rot: [0, Math.PI, 0] },
+            { pos: [1.1 / 2 + 0.005, 0, 0], rot: [0, Math.PI / 2, 0] },
+            { pos: [-1.1 / 2 - 0.005, 0, 0], rot: [0, -Math.PI / 2, 0] },
+            { pos: [0, 1.1 / 2 + 0.005, 0], rot: [-Math.PI / 2, 0, 0] },
+            { pos: [0, -1.1 / 2 - 0.005, 0], rot: [Math.PI / 2, 0, 0] }
         ];
         faces.forEach(f => {
             const diamond = new THREE.Mesh(diamondGeom, blackMatC);
@@ -694,7 +715,7 @@
             mesh.receiveShadow = true;
             return mesh;
         }
-        const c = cubeSize / 2;
+        const c = 1.1 / 2;
         const pts = [
             new THREE.Vector3(-c, -c, -c), new THREE.Vector3(c, -c, -c), new THREE.Vector3(c, -c, c),
             new THREE.Vector3(-c, -c, c),
@@ -723,8 +744,7 @@
             grabbableCube.add(joint);
         });
 
-        // outline and glow (for grab highlight)
-        const outlineGeometry = new THREE.EdgesGeometry(new THREE.BoxGeometry(cubeSize, cubeSize, cubeSize));
+        const outlineGeometry = new THREE.EdgesGeometry(new THREE.BoxGeometry(1.1, 1.1, 1.1));
         const outlineMaterial = new THREE.LineBasicMaterial({ color: 0x88ddff });
         const outline = new THREE.LineSegments(outlineGeometry, outlineMaterial);
         outline.visible = false;
@@ -736,7 +756,6 @@
         const cubeGlowLight = new THREE.PointLight(0x3399ff, 0.0, 3);
         grabbableCube.add(cubeGlowLight);
 
-        // Store reference to procedural cube meshes so we can hide them if GLB loads
         const proceduralCubeMeshes = [];
         grabbableCube.children.forEach(child => {
             if (child.isMesh) proceduralCubeMeshes.push(child);
@@ -819,7 +838,6 @@
         const muzzleFlash = new THREE.PointLight(0xffaa00, 0, 5);
         gunGroup.add(muzzleFlash);
 
-        // Store procedural gun children for hiding if GLB loads
         const proceduralGunMeshes = [];
         gunGroup.children.forEach(child => {
             if (child.isMesh) proceduralGunMeshes.push(child);
@@ -829,91 +847,69 @@
         scene.add(camera);
 
         // ============================================================
-        // ASSET INTEGRATION: replace procedural with loaded GLB if available
+        // ASSET INTEGRATION with auto‑scaling
         // ============================================================
         function integrateAssets() {
             // ---- Environment ----
             if (assets.environment) {
-                // Hide procedural environment
                 proceduralEnvGroup.visible = false;
                 scene.add(assets.environment);
-                // Optionally adjust scale/position if needed
-                // assets.environment.position.set(0, 0, 0);
-                console.log('Using GLB environment');
+                console.log('Using auto-scaled GLB environment.');
             } else {
                 proceduralEnvGroup.visible = true;
-                console.log('Using procedural environment');
+                console.log('Using procedural environment.');
             }
 
             // ---- Cube ----
             if (assets.cube) {
-                // Hide procedural cube meshes
                 proceduralCubeMeshes.forEach(mesh => mesh.visible = false);
-                // Add GLB cube model
                 const cubeModel = assets.cube;
-                cubeModel.scale.set(0.5, 0.5, 0.5); // adjust as needed
                 cubeModel.castShadow = true;
                 cubeModel.receiveShadow = true;
                 grabbableCube.add(cubeModel);
-                // Update physics body size to match model's bounding box
-                const box = new THREE.Box3().setFromObject(cubeModel);
-                const size = box.getSize(new THREE.Vector3());
-                const halfSize = size.clone().multiplyScalar(0.5);
-                // Clamp to avoid zero size
-                if (halfSize.x > 0.01 && halfSize.y > 0.01 && halfSize.z > 0.01) {
-                    const newShape = new CANNON.Box(new CANNON.Vec3(halfSize.x, halfSize.y, halfSize.z));
+
+                // Update physics body to match the auto-scaled model
+                const halfExtents = getModelHalfExtents(cubeModel);
+                if (halfExtents.x > 0.01 && halfExtents.y > 0.01 && halfExtents.z > 0.01) {
                     cubeBody.shapes = [];
-                    cubeBody.addShape(newShape);
+                    cubeBody.addShape(new CANNON.Box(new CANNON.Vec3(halfExtents.x, halfExtents.y, halfExtents.z)));
+                    console.log(`Cube physics updated to ${halfExtents.x.toFixed(3)}, ${halfExtents.y.toFixed(3)}, ${halfExtents.z.toFixed(3)}`);
                 }
-                console.log('Using GLB cube');
+                console.log('Using auto-scaled GLB cube.');
             } else {
                 proceduralCubeMeshes.forEach(mesh => mesh.visible = true);
-                console.log('Using procedural cube');
+                console.log('Using procedural cube.');
             }
 
             // ---- Gun ----
             if (assets.gun) {
-                // Remove all procedural gun meshes
                 proceduralGunMeshes.forEach(mesh => {
                     gunGroup.remove(mesh);
                 });
-                // Add GLB gun
                 const gunModel = assets.gun;
-                gunModel.scale.set(0.3, 0.3, 0.3);
                 gunModel.position.set(0, 0, 0);
                 gunGroup.add(gunModel);
-                // Store references to parts if needed (e.g., muzzle for flash)
-                // We'll keep the muzzle flash light separate
-                console.log('Using GLB gun');
+                console.log('Using auto-scaled GLB gun.');
             } else {
-                // Ensure procedural meshes are visible
                 proceduralGunMeshes.forEach(mesh => {
                     if (!gunGroup.children.includes(mesh)) gunGroup.add(mesh);
                 });
-                console.log('Using procedural gun');
+                console.log('Using procedural gun.');
             }
         }
 
-        // Wait for all assets to be processed, then integrate
         function checkAndIntegrate() {
             if (allAssetsAttempted) {
                 integrateAssets();
-                // Start the game (menu is already shown)
-                // The play button will start the game when clicked.
             } else {
                 setTimeout(checkAndIntegrate, 100);
             }
         }
-        // Start checking after a short delay to allow loading
         setTimeout(checkAndIntegrate, 500);
 
         // ============================================================
-        // GAME LOGIC (portals, controls, etc.) – mostly unchanged
+        // GAME LOGIC (portals, controls, etc.) – unchanged
         // ============================================================
-        // (We'll keep the same functions as original, but with minor tweaks)
-        // ============================================================
-
-        // ----- PORTAL functions (unchanged) -----
         const PORTAL_RADIUS = 0.9;
         const PORTAL_HEIGHT_SCALE = 1.5;
         const PORTAL_RESET_DISTANCE = 3.0;
@@ -1065,8 +1061,6 @@
 
         function updateGunColor(type) {
             const hex = type === 'orange' ? 0xff6600 : 0x3399ff;
-            // If using procedural gun, we have core material; if GLB, we might not have it.
-            // We'll try to update if it exists.
             if (core.material) {
                 core.material.color.setHex(hex);
                 core.material.emissive.setHex(hex);
@@ -1079,7 +1073,6 @@
             }
         }
 
-        // ----- Teleport logic (unchanged) -----
         function teleportEntity(entity, fromPortal, toPortal) {
             if (!fromPortal || !toPortal || !portalStates[fromPortal.type].canTrigger) return false;
             
@@ -1198,7 +1191,6 @@
             triggerClearAnimation();
         }
 
-        // ----- Controls (unchanged) -----
         const controls = new PointerLockControls(camera, renderer.domElement);
         const move = { forward: false, backward: false, left: false, right: false, jump: false, sprint: false, crouch: false };
         const vel = new THREE.Vector3();
@@ -1285,7 +1277,6 @@
         document.addEventListener('contextmenu', e => e.preventDefault());
         renderer.domElement.addEventListener('click', () => controls.lock());
 
-        // ----- Grabbing (unchanged) -----
         let heldObject = null;
         const holdDistance = 2.0;
         let targetGunX = 0.35, targetGunY = -0.25, targetGunZ = -0.8;
@@ -1351,7 +1342,6 @@
             }
         }
 
-        // ----- Gun firing (unchanged) -----
         let recoil = 0, recoilRotX = 0, grabRecoil = 0, idleTimer = 0, activeBeam = null, corePulse = 0;
         let clearAnimActive = false, clearAnimTime = 0;
         const CLEAR_ANIM_DURATION = 0.8;
@@ -1371,10 +1361,8 @@
             setTimeout(() => muzzleFlash.intensity = 0, 60);
             corePulse = 1.5;
             if (activeBeam) scene.remove(activeBeam);
-            // Use muzzle position (if GLB gun, we need to find a muzzle point; fallback to gunGroup position)
             let muzzleWorldPos;
             if (assets.gun) {
-                // Try to find a child named 'muzzle' or 'Muzzle'
                 const muzzleNode = assets.gun.getObjectByName('muzzle') || assets.gun.getObjectByName('Muzzle');
                 if (muzzleNode) {
                     muzzleWorldPos = new THREE.Vector3();
@@ -1382,13 +1370,11 @@
                 } else {
                     muzzleWorldPos = gunGroup.position.clone();
                     camera.getWorldPosition(muzzleWorldPos);
-                    // approximate offset
                     const dir = new THREE.Vector3();
                     camera.getWorldDirection(dir);
                     muzzleWorldPos.add(dir.multiplyScalar(1.5));
                 }
             } else {
-                // procedural: use muzzle mesh position
                 if (muzzle) {
                     muzzleWorldPos = new THREE.Vector3();
                     muzzle.getWorldPosition(muzzleWorldPos);
@@ -1410,7 +1396,7 @@
         }
 
         // ============================================================
-        // RENDER LOOP (mostly unchanged, with dynamic collision mask update)
+        // RENDER LOOP
         // ============================================================
         const clock = new THREE.Clock();
 
@@ -1469,7 +1455,6 @@
                 resolveCollision(camera.position, 0.35, vel);
             }
 
-            // Dynamic collision mask for cube near portals
             let nearPortal = false;
             if (portals.orange && portals.blue) {
                 const cubePos = new THREE.Vector3(cubeBody.position.x, cubeBody.position.y, cubeBody.position.z);
@@ -1496,7 +1481,6 @@
                 else checkPortalTeleport(grabbableCube);
             }
 
-            // Gun sway / idle animation (works for both procedural and GLB)
             const hDes = Math.sqrt(vel.x * vel.x + vel.z * vel.z);
             const isMoving = hDes > 0.1 && isGrounded;
             let swayX = 0, swayY = 0, swayRotZ = 0, swayRotX = 0;
@@ -1571,7 +1555,6 @@
             gunGroup.position.z += (recoil + grabRecoil);
             gunGroup.rotation.x += recoilRotX;
 
-            // Portal rendering
             if (portals.orange && portals.blue) {
                 portalSystem.renderAllPortals();
                 
@@ -1608,12 +1591,6 @@
             previewCamera.updateProjectionMatrix();
             portalSystem.updateSize(window.innerWidth, window.innerHeight);
         });
-
-        // ============================================================
-        // STARTUP: Show loading indicator until assets are processed
-        // ============================================================
-        // The indicator will be hidden once all assets are attempted.
-        // The game menu is already visible.
     </script>
 </body>
 </html>
